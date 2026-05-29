@@ -2,7 +2,7 @@
 
 > A Data Lake project analyzing global drug trends using open public data.
 
-![Python](https://img.shields.io/badge/Python-3.11+-green)
+![Python](https://img.shields.io/badge/Python-3.14+-green)
 ![Prefect](https://img.shields.io/badge/Orchestration-Prefect-blue)
 ![MinIO](https://img.shields.io/badge/Storage-MinIO-purple)
 ![Docker](https://img.shields.io/badge/Infra-Docker-orange)
