@@ -69,8 +69,8 @@ prefect server start
 ## Team
 
 EFREI Paris — ING2-APP-BDML1, 2025-2026
-[Pierre-Hugo HERRAN](github.com/PierreHugo)
-[Uthum UKWATTAGE](github.com/uthumatik)
-[Aymen Alloune](github.com/AymenShe)
+- [Pierre-Hugo HERRAN](github.com/PierreHugo)
+- [Uthum UKWATTAGE](github.com/uthumatik)
+- [Aymen Alloune](github.com/AymenShe)
 
 > Public data only. For academic purposes.
