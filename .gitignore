@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Data lake raw layer - ingested locally / pushed to MinIO, not committed
+data/raw/*
+!data/raw/.gitkeep

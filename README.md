@@ -74,3 +74,21 @@ EFREI Paris — ING2-APP-BDML1, 2025-2026
 - [Aymen Alloune](https://github.com/AymenShe)
 
 > Public data only. For academic purposes.
+
+## Data structure 
+
+- drug name
+- drug type/class
+- primary effect
+- short-term effect
+- long-term effect
+- typical onset and duration
+- route of use (e.g. oral, smoke..)
+- medical use
+- common risks
+- legal status
+
+Optionally: 
+- interactions with other drugs
+- mechanism of action (e.g. what brain systems it affects)
+- population cautions (e.g. pregnant)
