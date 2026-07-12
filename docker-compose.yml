@@ -13,15 +13,134 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
 
-  prefect:
-    image: prefecthq/prefect:2-latest
-    container_name: narcolakeptic-prefect
-    ports:
-      - "4200:4200"
-    command: prefect server start --host 0.0.0.0
+  init-minio:
+    image: minio/mc
+    container_name: narcolakeptic-init-minio
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin) do echo 'waiting for minio...' && sleep 1; done;
+      /usr/bin/mc mb -p myminio/raw;
+      /usr/bin/mc mb -p myminio/staging;
+      /usr/bin/mc mb -p myminio/curated;
+      echo 'MinIO buckets created successfully';
+      "
+    restart: "no"
+
+  postgres:
+    image: postgres:15
+    container_name: narcolakeptic-postgres
     environment:
-      PREFECT_UI_API_URL: http://localhost:4200/api
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  airflow-webserver:
+    image: apache/airflow:2.9.0-python3.11
+    container_name: narcolakeptic-airflow-webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: narcolakeptic_secret_key_change_in_prod
+      _AIRFLOW_WEBSERVER_KEY: narcolakeptic_secret_key_change_in_prod
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__SCHEDULER__STANDALONE_DAG_PROCESSOR: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - ./ingestion:/opt/airflow/ingestion
+      - ./processing:/opt/airflow/processing
+      - ./flows:/opt/airflow/flows
+      - ./requirements.txt:/opt/airflow/requirements.txt:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    command: webserver
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname $$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.0-python3.11
+    container_name: narcolakeptic-airflow-scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: narcolakeptic_secret_key_change_in_prod
+      _AIRFLOW_WEBSERVER_KEY: narcolakeptic_secret_key_change_in_prod
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - ./ingestion:/opt/airflow/ingestion
+      - ./processing:/opt/airflow/processing
+      - ./flows:/opt/airflow/flows
+      - ./requirements.txt:/opt/airflow/requirements.txt:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-webserver:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    command: scheduler
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: narcolakeptic-api
+    ports:
+      - "8000:8000"
+    environment:
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET_RAW=raw
+      - MINIO_SECURE=false
+      - DATA_STAGING_PATH=/app/data/staging
+      - DATA_CURATED_PATH=/app/data/curated
+      - LOG_LEVEL=INFO
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   minio_data:
+  postgres_data:
