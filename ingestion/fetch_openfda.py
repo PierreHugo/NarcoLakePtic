@@ -16,27 +16,35 @@ pour passer de 40 à 240 req/min :
   export OPENFDA_API_KEY="your_key_here"
 """
 import csv
+import io
 import logging
 import os
 import time
 from datetime import date, timedelta
 
 import requests
+from minio import Minio
 from dotenv import load_dotenv
 
 load_dotenv()
 
-BASE_URL      = "https://api.fda.gov/drug/label.json"
+BASE_URL = "https://api.fda.gov/drug/label.json"
 PARTITION_CAP = 25000         # openFDA's max skip value
-PAGE_SIZE     = 1000          # max limit per call
-DELAY         = 0.4           # seconds between requests (respect rate limit)
-MAX_RETRIES   = 3
-API_KEY       = os.getenv("OPENFDA_API_KEY", "")
+PAGE_SIZE = 1000              # max limit per call
+DELAY = 0.4                   # seconds between requests (respect rate limit)
+MAX_RETRIES = 3
 
-RAW_OUTPUT_PATH = "data/raw/openfda_drug_labels_api.csv"
+API_KEY = os.getenv("OPENFDA_API_KEY", "")
+
+RAW_LOCAL_PATH = "data/raw/openfda_drug_labels_api.csv"
+MINIO_BUCKET_RAW = os.getenv("MINIO_BUCKET_RAW", "raw")
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
 
 EARLIEST = date(1900, 1, 1)
-LATEST   = date(2030, 12, 31)
+LATEST = date(2030, 12, 31)
 
 FIELDNAMES = [
     "spl_id", "brand_name", "generic_name", "manufacturer_name",
@@ -54,7 +62,26 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-def get(params: dict) -> dict | None:
+def get_minio_client() -> Minio:
+    """Create and return MinIO client."""
+    return Minio(
+        MINIO_ENDPOINT,
+        access_key=MINIO_ACCESS_KEY,
+        secret_key=MINIO_SECRET_KEY,
+        secure=MINIO_SECURE
+    )
+
+
+def ensure_bucket(client: Minio, bucket: str):
+    """Ensure bucket exists, create if not."""
+    if not client.bucket_exists(bucket):
+        client.make_bucket(bucket)
+        log.info(f"Created bucket: {bucket}")
+    else:
+        log.info(f"Bucket exists: {bucket}")
+
+
+def get(params: dict):
     """GET the openFDA API with retries. Returns parsed JSON or None."""
     if API_KEY:
         params["api_key"] = API_KEY
@@ -149,11 +176,12 @@ def extract_row(rec: dict) -> dict:
 
 
 def fetch_openfda():
-    os.makedirs(os.path.dirname(RAW_OUTPUT_PATH), exist_ok=True)
+    os.makedirs(os.path.dirname(RAW_LOCAL_PATH), exist_ok=True)
     seen_ids: set[str] = set()
     row_count = 0
 
-    with open(RAW_OUTPUT_PATH, "w", newline="", encoding="utf-8") as f:
+    # Write locally first
+    with open(RAW_LOCAL_PATH, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         writer.writeheader()
 
@@ -174,7 +202,30 @@ def fetch_openfda():
                     row_count += 1
                 skip += PAGE_SIZE
 
-    print(f"openFDA fetched: {row_count} rows -> {RAW_OUTPUT_PATH}")
+    log.info(f"openFDA fetched: {row_count} rows -> {RAW_LOCAL_PATH}")
+
+    # Push to MinIO raw bucket
+    try:
+        client = get_minio_client()
+        ensure_bucket(client, MINIO_BUCKET_RAW)
+
+        object_name = "openfda/openfda_drug_labels_api.csv"
+        with open(RAW_LOCAL_PATH, "rb") as f:
+            file_stat = os.fstat(f.fileno())
+            client.put_object(
+                MINIO_BUCKET_RAW,
+                object_name,
+                f,
+                file_stat.st_size,
+                content_type="text/csv"
+            )
+        log.info(f"Pushed to MinIO: s3://{MINIO_BUCKET_RAW}/{object_name} ({file_stat.st_size} bytes)")
+
+    except Exception as e:
+        log.error(f"Failed to push to MinIO: {e}")
+        raise
+
+    return row_count
 
 
 if __name__ == "__main__":
