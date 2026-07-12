@@ -1,5 +1,24 @@
-prefect==3.7.2
+# Core dependencies
+prefect==2.16.0
 minio==7.2.5
 pandas==2.2.0
 requests==2.31.0
 python-dotenv==1.0.0
+
+# API Gateway
+fastapi==0.109.0
+uvicorn==0.27.0
+pydantic==2.5.0
+
+# Airflow (for DAG execution)
+apache-airflow==2.9.0
+apache-airflow-providers-postgres==5.8.0
+psycopg2-binary==2.9.9
+
+# Data processing
+numpy==1.26.4
+
+# Testing
+pytest==7.4.0
+pytest-cov==4.1.0
+pytest-mock==3.12.0
